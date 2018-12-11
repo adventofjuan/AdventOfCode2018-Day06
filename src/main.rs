@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::collections::HashMap;
 use std::io::{BufReader, BufRead};
-use std::collections::VecDeque;
+use std::cmp::max;
 
 #[derive(Debug, PartialEq, Clone, Hash, Eq, Copy)]
 struct Point {
@@ -16,25 +16,6 @@ impl Point {
 
     fn dist(&self, that: &Point) -> i64 {
         i64::abs(self.x - that.x) + i64::abs(self.y - that.y)
-    }
-
-    fn bound_by(&self, that: &Point, mut bound: Bound) -> Bound {
-        if self.x < that.x {
-            bound.rig = true;
-        }
-
-        if self.x > that.x {
-            bound.lef = true;
-        }
-
-        if self.y < that.y {
-            bound.bot = true;
-        }
-
-        if self.y > that.y {
-            bound.top = true;
-        }
-        bound
     }
 
 }
@@ -52,122 +33,70 @@ fn read_points(file: BufReader<&File>) -> Vec<Point> {
     res
 }
 
-#[derive(Debug, PartialEq)]
-struct Bound {
-    top : bool,
-    bot : bool,
-    lef : bool,
-    rig : bool,
+fn find_max(points: &Vec<Point>) -> (i64, i64) {
+    let mut max_x = 0;
+    let mut max_y = 0;
+
+    for p in points {
+        max_x = max(max_x, p.x);
+        max_y = max(max_y, p.y);
+    }
+
+    (max_x, max_y)
 }
 
-impl Bound {
-
-    fn new() -> Bound {
-        Bound{ top : false, bot : false, lef : false, rig : false}
-    }
-
-    fn bounded(&self) -> bool {
-        self.top && self.bot && self.lef && self.rig
-    }
-
-}
-
-fn find_enclosed_points(points: &Vec<Point>) -> (Vec<Point>, Vec<Point>) {
-    let mut bounded = Vec::new();
-    let mut unbounded = Vec::new();
-
-    for p1 in points {
-        let mut b = Bound::new();
-        for p2 in points {
-            if p1 != p2 {
-                b = p1.bound_by(p2, b);
-            }
-        }
-
-        if b.bounded() {
-            bounded.push(p1.clone());
-        } else {
-            unbounded.push(p1.clone());
+fn find_closest_point(pos: Point, points: &Vec<Point>) -> Point {
+    let mut min_dist = std::i64::MAX;
+    let mut min_point = Point::new(-1, -1);
+    for p in points {
+        let dist = pos.dist(&p);
+        if dist < min_dist {
+            min_dist = dist;
+            min_point = *p;
+        } else if dist == min_dist {
+            min_point = Point::new(-1, -1);
         }
     }
-    (bounded, unbounded)
-}
-
-fn find_closest_point(cur: &Point, all: &Vec<Point>) -> Point {
-    let mut min = std::i64::MAX;
-    let mut res = Point::new(-1, -1);
-
-    //println!("Testing {:?}", cur);
-
-    if all.contains(cur) {
-        return cur.clone();
-    }
-
-    for p in all {
-        let dist = cur.dist(p);
-        if dist < min {
-            min = dist;
-            res = p.clone();
-        } else if dist == min {
-            res = Point::new(-1, -1)
-        }
-    }
-    res
-}
-
-fn expand(point: &Point, unbounded: &Vec<Point>, all: &Vec<Point>,
-          map: &mut HashMap<Point, Point>) {
-
-    let mut openlist: VecDeque<Point> = VecDeque::new();
-    let exit = false;
-    openlist.push_front(point.clone());
-
-    while !exit || openlist.is_empty() {
-        let current = openlist.pop_front();
-        match current {
-            Some(cur) => {
-                if !map.contains_key(&cur) {
-                    let closest = find_closest_point(&cur, &all);
-                    if unbounded.contains(&closest) || closest == Point::new(-1, -1){
-                        continue;
-                    }
-                    map.insert(cur.clone(), closest.clone());
-                }
-                for x in -1..2 {
-                    for y in -1..2 {
-                        let np = Point::new(cur.x + x, cur.y + y);
-                        if !map.contains_key(&np) && !openlist.contains(&np) {
-                            openlist.push_back(np);
-                        }
-                    }
-                }
-            },
-            None => break
-        }
-    }
+    min_point
 }
 
 fn part01(points: &Vec<Point>) {
-    let (bounded, unbounded) = find_enclosed_points(&points);
-    let mut map: HashMap<Point, Point> = HashMap::new();
-    let mut count_map = HashMap::new();
+    let mut grid = HashMap::new();
+    let mut regions = HashMap::new();
+    let mut maximum = 0;
 
-    for p in bounded.iter() {
-        expand(&p, &unbounded, &points, &mut map);
-    }
+    let (max_x, max_y) = find_max(points);
 
-    for (_, val) in map.iter() {
-        if bounded.contains(&val) {
-            let count = count_map.entry(val.clone()).or_insert(0);
-            *count += 1;
+    for i in 0..=max_x {
+        for j in 0..=max_y {
+            let cur = Point::new(i, j);
+            let closest = find_closest_point(cur , points);
+            grid.insert(cur, closest);
+
+            let total = regions.entry(closest).or_insert(0);
+            *total += 1;
         }
     }
 
-    let mut max = 0;
-    for (_, v) in count_map.iter() {
-        max = std::cmp::max(max, *v);
+    for x in 0..=max_x {
+        let bad = grid[&Point::new(x, 0)];
+        regions.remove_entry(&bad);
+        let bad = grid[&Point::new(x, max_y)];
+        regions.remove_entry(&bad);
     }
-    println!("Part 01 result = {}", max);
+
+    for y in 0..=max_y {
+        let bad = grid[&Point::new(0, y)];
+        regions.remove_entry(&bad);
+        let bad = grid[&Point::new(max_x, y)];
+        regions.remove_entry(&bad);
+    }
+
+    for (_, v) in regions {
+        maximum = max(maximum, v)
+    }
+
+    println!("Part 01 result = {}", maximum);
 }
 
 fn main() {
